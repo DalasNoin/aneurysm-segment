@@ -2,6 +2,7 @@ import data
 import os
 import numpy as np
 from scipy import ndimage
+from matplotlib import pyplot as plt
 
 
 class AneurysmData:
@@ -42,3 +43,17 @@ class AneurysmData:
     
     def correct_shape(self,data):
         return data.reshape(*data.shape,1)
+    
+    def show_image(self,image_idx=0, N=4):
+        image = self.images[image_idx]
+        mask = self.masks[image_idx]
+        plt.figure(dpi=800)
+        plt.rcParams['figure.figsize'] = [20,20]
+        fig, ax = plt.subplots(nrows=N, ncols=N)
+        for i in range(N):
+            for j in range(N):
+                im = image[i+j*N,:,:]
+                m = mask[i+j*N,:,:]
+                ax[i,j].imshow(im,alpha=0.2,cmap="Greys_r")
+                ax[i,j].imshow(m==0,alpha=0.8, cmap="cividis",vmin=0,vmax=1)
+        return fig
