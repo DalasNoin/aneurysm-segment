@@ -13,10 +13,10 @@ def discover(path):
 def extract_pixel_arrays(path_list):
     ret = list()
     for path in path_list:
-        ret.append(_extract_pixel_array(path))
+        ret.append(extract_pixel_array(path))
     return ret
 
-def _extract_pixel_array(path):
+def extract_pixel_array(path):
     image = pydicom.read_file(path)
     return image.pixel_array
 
