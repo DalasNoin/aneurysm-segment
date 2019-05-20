@@ -27,6 +27,10 @@ def extract_pixel_array(path):
 
 def preprocess_x_data(X):
     X = [arr.reshape(*arr.shape, 1) for arr in X]
+    
+def safe_mkdir(path):
+    if not os.path.exists(path):
+        os.mkdir(path)
 
 
 class AneurysmData:
@@ -39,8 +43,14 @@ class AneurysmData:
             if size is not None:
                 self.images = self.downsampling(self.paths_image, size=size)
                 self.masks = self.downsampling(self.paths_mask, size=size)
-            self.images = self.normalize(self.images)
-            self.masks = self.to_binary(self.masks).astype("int")
+                self.images = self.normalize(self.images)
+                self.masks = self.to_binary(self.masks).astype("int")
+            #else:
+                #self.images = self.load(self.paths_image)
+                #self.masks = self.load(self.paths_mask)
+                #self.images = self.normalize(self.images)
+                #self.masks = self.to_binary(self.masks)
+
         else:
             self.images = [np.random.randint(low=-100, high=100, size=(1, 110, 256 + i, 256 - i)) for i in range(100)]
             self.masks = [np.random.randint(low=0, high=1, size=(1, 110, 256 + i, 256 - i)) for i in
@@ -52,7 +62,30 @@ class AneurysmData:
         zoom = [target / source for target, source in zip(size, image.shape)]
         image = ndimage.zoom(image, zoom=zoom)
         return image
+    
+    def load(self, paths):
+        images = list()
+        for path in paths:
+            image = extract_pixel_array(path)
+            images.append(image)
+        return images
 
+    def element_wise_save(self):
+        safe_mkdir(config.full_data_path)
+        mask_dir = join(config.full_data_path,"mask")
+        image_dir = join(config.full_data_path,"image")
+        safe_mkdir(mask_dir)
+        safe_mkdir(image_dir)
+        for image_path,image_name, mask_path, mask_name in zip(self.paths_image,self.image_names, self.paths_mask, self.mask_names):
+            
+            image = extract_pixel_array(image_path)
+            image = self.normalize(image).astype("float32")
+            self.save_single(image_dir, image_name, image)
+            mask = extract_pixel_array(mask_path)
+            mask = self.to_binary(mask)
+            self.save_single(mask_dir, mask_name, mask)
+        
+    
     def downsampling(self, paths, size=(16, 16, 16)):
         images = list()
         for path in paths:
@@ -66,9 +99,13 @@ class AneurysmData:
         :param data:
         :return:
         """
+        if isinstance(data,list):
+            return [(element - np.mean(element))/np.std(element) for element in data]
         return (data - np.mean(data)) / np.std(data)
 
     def to_binary(self, data):
+        if isinstance(data,list):
+            return [(element != 0).astype("int") for element in data]
         return data != 0
 
     def correct_shape(self, data):
@@ -87,12 +124,21 @@ class AneurysmData:
                 ax[i, j].imshow(im, alpha=0.2, cmap="Greys_r")
                 ax[i, j].imshow(m == 0, alpha=0.8, cmap="cividis", vmin=0, vmax=1)
         return fig
+    
+    def save_single(self,path, name, tensor):
+        new_path = join(path, name)
+        np.save(new_path, tensor)
 
     def save(self,path, names, tensors):
         new_paths = [join(path, name) for name in names]
         for tensor, path in zip(tensors, new_paths):
             np.save(path, tensor)
 
-    def save_all(self):
-        self.save(config.full_data_path, self.image_names, self.images)
-        self.save(config.full_data_path, self.mask_names, self.masks)
+    def save_all(self, path):
+        safe_mkdir(path)
+        self.save(path, self.image_names, self.images)
+        self.save(path, self.mask_names, self.masks)
+        
+if __name__=="__main__":
+    ad = AneurysmData(config.PATH, size = None)
+    ad.element_wise_save()
