@@ -3,3 +3,6 @@ config.py
 .idea
 __pycache__/
 fullimages
+patches
+plots
+Untitled.ipynb

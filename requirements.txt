@@ -76,3 +76,5 @@ webencodings==0.5.1
 Werkzeug==0.15.4
 widgetsnbextension==3.4.2
 scipy
+tqdm
+pandas
