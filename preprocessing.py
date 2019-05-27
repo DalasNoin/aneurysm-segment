@@ -104,7 +104,8 @@ class AneurysmData:
         print("Create Patches for the images")
         self.run_patch(self.paths_image, self.image_names, image_dir)
         print("Create patches for the masks")
-        self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True), columns = ["Indices", "patches", "filepath", "name", "positiv"])
+        self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
+                                    columns=["Indices", "patches", "filepath", "name", "positiv"])
 
     def generate_filepath(self, target_dir, name, indices):
         if "." in name:
@@ -121,7 +122,7 @@ class AneurysmData:
             for sub_tensor, indices, patch in pi.iterate():
                 filepath = self.generate_filepath(target_dir, name, indices)
                 if mask:
-                    positive_eg = len(np.unique(sub_tensor)) !=1
+                    positive_eg = len(np.unique(sub_tensor)) != 1
                     records.append([indices, patch, filepath, name, positive_eg])
                 np.save(filepath, sub_tensor)
         if mask:
@@ -181,9 +182,43 @@ class AneurysmData:
         self.save(path, self.mask_names, self.masks)
 
 
+class AneurysmDataGenerator:
+    def __init__(self, base_path, names):
+        self.base_path = base_path
+        self.names = names
+        self.get_paths()
+        self.images = self.load(self.image_paths)
+        self.masks = self.load(self.mask_paths)
+
+    def get_paths(self):
+        self.mask_paths = [join(self.base_path, "mask", name) for name in self.names]
+        self.image_paths = [join(self.base_path, "image", name) for name in self.names]
+
+    def load(self, paths, count=100):
+        images = list()
+        for path in paths[:count]:
+            image = extract_pixel_array(path)
+            images.append(image)
+        return images
+
+    def show_image(self, image_idx=0, N=4):
+        image = self.images[image_idx]
+        mask = self.masks[image_idx]
+        plt.figure(dpi=800)
+        plt.rcParams['figure.figsize'] = [20, 20]
+        fig, ax = plt.subplots(nrows=N, ncols=N)
+        for i in range(N):
+            for j in range(N):
+                im = image[i + j * N, :, :]
+                m = mask[i + j * N, :, :]
+                ax[i, j].imshow(im, alpha=0.2, cmap="Greys_r")
+                ax[i, j].imshow(m == 0, alpha=0.8, cmap="cividis", vmin=0, vmax=1)
+        return fig
+
+
 if __name__ == "__main__":
     # ad = AneurysmData(config.PATH, size=None)
     # ad.element_wise_save()
-    ad = AneurysmData(config.full_data_path)
-    ad.save_patches_ew()
-    ad.records.to_csv(join(config.patch_data_path, "records.csv"))
+    # ad = AneurysmData(config.full_data_path)
+    # ad.save_patches_ew()
+    # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
