@@ -194,14 +194,14 @@ class AneurysmDataGenerator:
         self.mask_paths = [join(self.base_path, "mask", name) for name in self.names]
         self.image_paths = [join(self.base_path, "image", name) for name in self.names]
 
-    def load(self, paths, count=100):
+    def load(self, paths):
         images = list()
-        for path in paths[:count]:
+        for path in paths:
             image = extract_pixel_array(path)
             images.append(image)
         return images
 
-    def show_image(self, image_idx=0, N=4):
+    def show_image(self, image_idx=0, N=4, alpha_image=0.5, alpha_mask=0.5):
         image = self.images[image_idx]
         mask = self.masks[image_idx]
         plt.figure(dpi=800)
@@ -211,12 +211,13 @@ class AneurysmDataGenerator:
             for j in range(N):
                 im = image[i + j * N, :, :]
                 m = mask[i + j * N, :, :]
-                ax[i, j].imshow(im, alpha=0.2, cmap="Greys_r")
-                ax[i, j].imshow(m == 0, alpha=0.8, cmap="cividis", vmin=0, vmax=1)
+                ax[i, j].imshow(im, alpha=alpha_image, cmap="Greys_r")
+                ax[i, j].imshow(m == 0, alpha=alpha_mask, cmap="cividis", vmin=0, vmax=1)
         return fig
 
 
 if __name__ == "__main__":
+    pass
     # ad = AneurysmData(config.PATH, size=None)
     # ad.element_wise_save()
     # ad = AneurysmData(config.full_data_path)
