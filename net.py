@@ -1,9 +1,42 @@
 import tensorflow as tf
 import keras
+from keras import metrics
 from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, MaxPooling3D, UpSampling3D
 import numpy as np
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
+
+def weighted_crossentropy(beta):
+    def convert_to_logits(y_pred):
+        # see https://github.com/tensorflow/tensorflow/blob/r1.10/tensorflow/python/keras/backend.py#L3525
+        y_pred = tf.clip_by_value(y_pred, tf.keras.backend.epsilon(), 1 - tf.keras.backend.epsilon())
+
+        return tf.log(y_pred / (1 - y_pred))
+
+    def loss(y_true, y_pred):
+        y_pred = convert_to_logits(y_pred)
+        loss = tf.nn.weighted_cross_entropy_with_logits(logits=y_pred, targets=y_true, pos_weight=beta)
+
+        return tf.reduce_mean(loss)
+
+    return loss
+
+def focal_loss(alpha=0.25, gamma=2):
+    def focal_loss_with_logits(logits, targets, alpha, gamma, y_pred):
+        weight_a = alpha * (1 - y_pred) ** gamma * targets
+        weight_b = (1 - alpha) * y_pred ** gamma * (1 - targets)
+
+        return (tf.log1p(tf.exp(-tf.abs(logits))) + tf.nn.relu(-logits)) * (weight_a + weight_b) + logits * weight_b 
+
+    def loss(y_true, y_pred):
+        y_pred = tf.clip_by_value(y_pred, tf.keras.backend.epsilon(), 1 - tf.keras.backend.epsilon())
+        logits = tf.log(y_pred / (1 - y_pred))
+
+        loss = focal_loss_with_logits(logits=logits, targets=y_true, alpha=alpha, gamma=gamma, y_pred=y_pred)
+
+        return tf.reduce_mean(loss)
+
+    return loss
 
 def weighted_categorical_crossentropy(weights):
     """
@@ -146,7 +179,21 @@ def conv_model_auto_simple(loss = 'mean_squared_error'):
     #          metrics=['accuracy'])
     return model
 
-def conv_model_auto_deep(loss = 'mean_squared_error'):
+def conv_no_pooling(optimizer="sgd", loss = 'mean_squared_error'):
+    model = tf.keras.models.Sequential()
+    
+    model.add(Conv3D(filters=30,kernel_size=5,strides=(2,2,2),padding="valid", activation="relu"))
+    model.add(Conv3D(filters=30,kernel_size=5,strides=(2,2,2),padding="valid", activation="relu"))
+    model.add(Conv3D(filters=30,kernel_size=5,strides=(2,2,2),padding="valid", activation="relu"))
+    
+    #model.add(Conv3DTranspose
+    
+    model.compile(optimizer='sgd',
+              loss=loss,
+              metrics=[metrics.mae])
+    return model
+
+def conv_model_auto_deep(optimizer="sgd", loss = 'mean_squared_error', output_dim=1):
     model = tf.keras.models.Sequential()
     
     model.add(Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu"))
@@ -174,12 +221,12 @@ def conv_model_auto_deep(loss = 'mean_squared_error'):
     model.add(UpSampling3D((2,2,2)))
     
     model.add(Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu"))
-    model.add(Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu"))
-    model.add(Conv3D(filters=1,kernel_size=3,strides=(1,1,1),padding="same", activation="sigmoid"))
+    model.add(Conv3D(filters=30,kernel_size=1,strides=(1,1,1),padding="same", activation="relu"))
+    model.add(Conv3D(filters=output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid"))
     
-    model.compile(optimizer='sgd',
+    model.compile(optimizer=optimizer,
               loss=loss,
-              metrics=['accuracy'])
+              metrics=[metrics.mae])
     return model
 
-models = [conv_model, conv_model_deep, conv_model_auto()]
+models = [conv_model, conv_model_deep, conv_model_auto]

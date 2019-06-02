@@ -95,23 +95,48 @@ class AneurysmData:
             mask = self.to_binary(mask)
             self.save_single(mask_dir, mask_name, mask)
 
-    def save_patches_ew(self):
+    def save_patches_ew(self, threshold = 0.02):
+        self.threshold = threshold
         safe_mkdir(config.full_data_path)
         mask_dir = join(config.patch_data_path, "mask")
         image_dir = join(config.patch_data_path, "image")
         safe_mkdir(mask_dir)
         safe_mkdir(image_dir)
         print("Create Patches for the images")
-        self.run_patch(self.paths_image, self.image_names, image_dir)
+        self.records = pd.DataFrame(self.run_patch_pos(config.patch_data_path),columns=["Indices", "patches", "filepath", "name", "positiv"])
+        #self.run_patch(self.paths_image, self.image_names, image_dir)
         print("Create patches for the masks")
-        self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
-                                    columns=["Indices", "patches", "filepath", "name", "positiv"])
+        #self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
+                                    #columns=["Indices", "patches", "filepath", "name", "positiv"])
+        self.records.to_csv(join(config.patch_data_path, "records.csv"))
 
     def generate_filepath(self, target_dir, name, indices):
         if "." in name:
             name = name.split(".")[0]
         filepath = join(target_dir, "{}-{}x{}x{}".format(name, *indices))
         return filepath
+    
+    
+    def run_patch_pos(self, target_dir):
+        records = []
+        mask_dir = join(config.patch_data_path, "mask")
+        image_dir = join(config.patch_data_path, "image")
+        for image_path, image_name, mask_path, mask_name in tqdm(zip(self.paths_image, self.image_names, self.paths_mask, self.mask_names), total=len(self.paths_image)):
+            image = extract_pixel_array(image_path)
+            mask = extract_pixel_array(mask_path)
+            pi = patching.PatchImage(name=image_name, tensor=image,stride=(20,20,20))
+            pi_mask = patching.PatchImage(name=mask_name, tensor=mask,stride=(20,20,20))
+            for mask_sub_tensor, indices, patch in pi_mask.iterate():
+                image_filepath = self.generate_filepath(image_dir, image_name, indices)
+                mask_filepath = self.generate_filepath(mask_dir, image_name, indices)
+                
+                positive_eg = np.mean(mask_sub_tensor) > self.threshold
+                if not positive_eg: continue
+                sub_tensor = pi.cut_patch(patch)
+                records.append([indices, patch, mask_filepath, image_name, positive_eg])
+                np.save(image_filepath, sub_tensor)
+                np.save(mask_filepath, mask_sub_tensor)
+        return records
 
     def run_patch(self, paths, names, target_dir, mask=False):
         if mask:
@@ -223,3 +248,5 @@ if __name__ == "__main__":
     # ad = AneurysmData(config.full_data_path)
     # ad.save_patches_ew()
     # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
+    ad = AneurysmData(config.full_data_path)
+    ad.save_patches_ew()
