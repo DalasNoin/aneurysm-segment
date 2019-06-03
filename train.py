@@ -11,13 +11,22 @@ import pandas as pd
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import datetime
+from tensorflow.keras.utils import plot_model
+from IPython.display import SVG
+from keras.utils import model_to_dot
+
 
 class Trainer:
     def __init__(self):
         os.makedirs("plots",exist_ok=True)
+        os.makedirs("logs",exist_ok=True)
     
-    def train(self, epochs=10, optimizer="adam", loss = "mean_squared_error"):
+    def train(self, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR"):
         self.loss=loss
+        self.epochs = epochs
+        self.optimizer = optimizer
+        self.name = "{}{}".format(datetime.datetime.now().strftime("%Y%m%dx%H%M%S"),name)
         records = pd.read_csv(os.path.join(patch_data_path,"records.csv"))
         names = list(records[records["positiv"]]["filepath"])
         names = [name.split("/")[-1]+".npy" for name in names]
@@ -34,19 +43,30 @@ class Trainer:
         
         
         
-        if False and "crossentropy" in self.loss:
-            print(self.y.shape)
-            self.y = keras.utils.to_categorical(self.y)
+        #if "crossentropy" in self.loss:
             
-            self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer, output_dim=2)
-        else:
-            self.y = self.y.reshape(*self.y.shape,1)
-            self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer)
+            #self.y = keras.utils.to_categorical(self.y)
+            
+            #self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer, output_dim=2)
+        #else:
+            
+        self.y = self.y.reshape(*self.y.shape,1)
+            #self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer)
+        self.model = net.unet(loss=loss, optimizer=optimizer)
 
         self.history = self.model.fit(self.x,self.y,batch_size=20,epochs=epochs,validation_split=0.05)
+        self.log()
         
     def log(self):
-        pass        
+        local_path = "logs/{}".format(self.name)
+        os.makedirs(local_path,exist_ok=True)
+        pd.DataFrame(self.history.history).to_csv(os.path.join(local_path, "history.csv"))
+        args = "{},{},{},{}".format(self.name,self.epochs, self.optimizer,self.loss)
+        with open(os.path.join(local_path,"args.txt"),"w") as f:
+            f.write(args)
+        #plot_model(self.model, to_file=os.path.join(local_path,"model.png"))
+        
+        self.svg = SVG(model_to_dot(self.model).create(prog='dot', format='svg'))
 
     def sample_prediction(self, num=-1):
         result = self.model.predict(self.x[num:num+1])
@@ -126,11 +146,12 @@ class Trainer:
         colors[..., 3] = 0.3
 
         frame_count = 100
-        first_stage=frame_count//2
+        first_stage=frame_count//1.8
 
 
         def update_lines(num):#, dataLines, lines):
-            angle = 90/first_stage
+            rotation = 180 # degrees
+            angle = rotation/first_stage
             if num == frame_count//1.5:
                 voxelmap = ax.voxels(mask, facecolors=1-colors, edgecolor="k", label="Prediction")
             if num <= first_stage:
@@ -166,8 +187,8 @@ class Trainer:
         
 if __name__=="__main__":
     trainer = Trainer()
-    trainer.train(epochs=20, loss=net.weighted_crossentropy(32))
+    trainer.train(epochs=2, loss=net.weighted_crossentropy(32))
     #trainer.plot_result4D(num=-3)
     #trainer.plot_result4D(num=-2)
-    trainer.plot_result4D(num=-4)
+    #trainer.plot_result4D(num=-5)
     

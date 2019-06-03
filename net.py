@@ -1,10 +1,11 @@
 import tensorflow as tf
-import keras
-from keras import metrics
-from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, MaxPooling3D, UpSampling3D
+from tensorflow import keras
+from tensorflow.keras import metrics
+from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, MaxPooling3D, UpSampling3D, concatenate
 import numpy as np
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
+from tensorflow.keras.models import Model
 
 def weighted_crossentropy(beta):
     def convert_to_logits(y_pred):
@@ -228,5 +229,49 @@ def conv_model_auto_deep(optimizer="sgd", loss = 'mean_squared_error', output_di
               loss=loss,
               metrics=[metrics.mae])
     return model
+
+def unet(optimizer="sgd", loss = 'mean_squared_error', output_dim=1):
+    Input = tf.keras.layers.Input(shape=(None,None,None,1)) # For debugging: shape=(40,40,40,1)
+    
+    x = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(Input)
+    x = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(x)
+    x = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(x)
+    
+    y = MaxPooling3D(pool_size=(2, 2, 2), strides=None, padding='valid')(x)
+    
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    
+    y = MaxPooling3D(pool_size=(2, 2, 2), strides=None, padding='valid')(y)
+    
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    
+    y = UpSampling3D((2,2,2))(y)
+    
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=30,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    
+    y = UpSampling3D((2,2,2))(y)
+    
+    y = concatenate([x,y],axis=-1)
+    
+    y = Conv3D(filters=60,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+    y = Conv3D(filters=40,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
+    Output = Conv3D(filters=output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
+    
+    model = Model(inputs=(Input), outputs=(Output))
+    #for layer in model.layers:
+    #    print(layer.output_shape)
+    model.compile(optimizer=optimizer,
+              loss=loss,
+              metrics=[metrics.mae])
+    return model
+
+def model_sol():
+    pass
 
 models = [conv_model, conv_model_deep, conv_model_auto]
