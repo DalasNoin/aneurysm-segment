@@ -1,5 +1,6 @@
+
+
 import tensorflow as tf
-import keras
 from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense
 import numpy as np
 import data
@@ -13,16 +14,13 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import datetime
 from tensorflow.keras.utils import plot_model
-from IPython.display import SVG
-from keras.utils import model_to_dot
-
 
 class Trainer:
     def __init__(self):
         os.makedirs("plots",exist_ok=True)
         os.makedirs("logs",exist_ok=True)
     
-    def train(self, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR"):
+    def train(self, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR", model=None):
         self.loss=loss
         self.epochs = epochs
         self.optimizer = optimizer
@@ -52,7 +50,10 @@ class Trainer:
             
         self.y = self.y.reshape(*self.y.shape,1)
             #self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer)
-        self.model = net.unet(loss=loss, optimizer=optimizer)
+        if model is None:
+            self.model = net.unet(loss=loss, optimizer=optimizer)
+        else:
+            self.model=model
 
         self.history = self.model.fit(self.x,self.y,batch_size=20,epochs=epochs,validation_split=0.05)
         self.log()
@@ -64,9 +65,13 @@ class Trainer:
         args = "{},{},{},{}".format(self.name,self.epochs, self.optimizer,self.loss)
         with open(os.path.join(local_path,"args.txt"),"w") as f:
             f.write(args)
+            
+        model_json = self.model.to_json()
+        with open(os.path.join(local_path,"model.json"), "w") as json_file:
+            json_file.write(model_json)
+        self.model.save(os.path.join(local_path,'model.h5'))
         #plot_model(self.model, to_file=os.path.join(local_path,"model.png"))
         
-        self.svg = SVG(model_to_dot(self.model).create(prog='dot', format='svg'))
 
     def sample_prediction(self, num=-1):
         result = self.model.predict(self.x[num:num+1])
@@ -183,11 +188,14 @@ class Trainer:
         Writer = animation.writers['ffmpeg']
         writer = Writer(fps=15)#, metadata=dict(artist='Me'), bitrate=5500)
         
-        line_ani.save("plots/plot.mp4", writer=writer, dpi=200)
+        line_ani.save("plots/plot{}.mp4".format(num), writer=writer, dpi=200)
         
 if __name__=="__main__":
     trainer = Trainer()
-    trainer.train(epochs=2, loss=net.weighted_crossentropy(32))
+    unet = net.UNet(level_count=1, loss=net.weighted_crossentropy(32))
+    unet.build()
+    
+    trainer.train(epochs=50, loss=net.weighted_crossentropy(32), model = unet.model)
     #trainer.plot_result4D(num=-3)
     #trainer.plot_result4D(num=-2)
     #trainer.plot_result4D(num=-5)

@@ -8,3 +8,5 @@ plots
 Untitled.ipynb
 plot.*
 logs
+*.json
+config.txt
