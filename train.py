@@ -5,6 +5,7 @@ from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense
 import numpy as np
 import data
 from config import patch_data_path
+import config
 import preprocessing
 import os
 import net
@@ -14,30 +15,32 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import datetime
 from tensorflow.keras.utils import plot_model
+from data import sequence_generators
 
 class Trainer:
     def __init__(self):
         os.makedirs("plots",exist_ok=True)
         os.makedirs("logs",exist_ok=True)
     
-    def train(self, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR", model=None):
+    def train(self, batch_size, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR", model=None):
         self.loss=loss
+        self.batch_size = batch_size
         self.epochs = epochs
         self.optimizer = optimizer
         self.name = "{}{}".format(datetime.datetime.now().strftime("%Y%m%dx%H%M%S"),name)
-        records = pd.read_csv(os.path.join(patch_data_path,"records.csv"))
-        names = list(records[records["positiv"]]["filepath"])
-        names = [name.split("/")[-1]+".npy" for name in names]
+        #records = pd.read_csv(os.path.join(patch_data_path,"records.csv"))
+        #names = list(records[records["positiv"]]["filepath"])
+        #names = [name.split("/")[-1]+".npy" for name in names]
 
-        self.adg = preprocessing.AneurysmDataGenerator(patch_data_path,names)
+        #self.adg = preprocessing.AneurysmDataGenerator(patch_data_path,names)
 
         
 
-        self.x = self.adg.images
-        self.x = np.array(self.x)
-        self.x = self.x.reshape(*self.x.shape,1)
-        self.y = self.adg.masks
-        self.y = np.array(self.y)
+        #self.x = self.adg.images
+        #self.x = np.array(self.x)
+        #self.x = self.x.reshape(*self.x.shape,1)
+        #self.y = self.adg.masks
+        #self.y = np.array(self.y)
         
         
         #if "crossentropy" in self.loss:
@@ -47,14 +50,16 @@ class Trainer:
             #self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer, output_dim=2)
         #else:
             
-        self.y = self.y.reshape(*self.y.shape,1)
+        #self.y = self.y.reshape(*self.y.shape,1)
             #self.model = net.conv_model_auto_deep(loss=loss, optimizer=optimizer)
         if model is None:
             self.model = net.unet(loss=loss, optimizer=optimizer)
         else:
             self.model=model
-
-        self.history = self.model.fit(self.x,self.y,batch_size=20,epochs=epochs,validation_split=0.05)
+        partition = sequence_generators.get_train_val_sequence()
+        self.train_gen = sequence_generators.DataGenerator(partition["train"], batch_size=self.batch_size)
+        self.test_gen = sequence_generators.DataGenerator(partition["test"], batch_size=self.batch_size)
+        self.history = self.model.fit_generator(generator=self.train_gen,epochs=epochs,validation_data=self.test_gen)
         self.log()
         
     def log(self):
@@ -73,10 +78,13 @@ class Trainer:
         
 
     def sample_prediction(self, num=-1):
-        result = self.model.predict(self.x[num:num+1])
+        #result = self.model.predict(self.x[num:num+1])
         #if False and "crossentropy" in self.loss or True:
         #    return result[...,1].reshape((40,40,40))
-        return result.reshape((40,40,40))
+        result, mask = self.test_gen.get_sample()
+        result = self.model.predict(result)
+        print(result.shape, mask.shape)
+        return result.reshape(config.shape) > 0.4, mask.reshape(config.shape)
     
     def plot_result(self):
         result = self.sample_prediction()
@@ -134,10 +142,9 @@ class Trainer:
         plt.savefig("plots/plot3d.png")
     
     def plot_result4D(self, num=-1):
-        result_mask = self.sample_prediction(num) > 0.40
-        mask = self.adg.masks[num]
+        result_mask, mask = self.sample_prediction()
         
-        x, y, z = np.indices(np.array(mask.shape)+1)/40
+        x, y, z = np.indices(np.array(mask.shape)+1)/config.shape[0]
         rc = self.midpoints(x)
         gc = self.midpoints(y)
         bc = self.midpoints(z)
@@ -147,7 +154,7 @@ class Trainer:
         colors[..., 0] = rc
         colors[..., 1] = gc
         colors[..., 2] = bc
-        colors[..., 3] = 0.3
+        colors[..., 3] = 0.4
 
         frame_count = 100
         first_stage=frame_count//1.8
@@ -157,7 +164,7 @@ class Trainer:
             rotation = 180 # degrees
             angle = rotation/first_stage
             if num == frame_count//1.5:
-                voxelmap = ax.voxels(mask, facecolors=1-colors, edgecolor="k", label="Prediction")
+                voxelmap = ax.voxels(mask, facecolors=1-colors, edgecolor=None, label="Prediction")
             if num <= first_stage:
                 ax.view_init(10,num*angle)
             else:
@@ -167,7 +174,7 @@ class Trainer:
         fig = plt.figure()
         ax = Axes3D(fig)
 
-        voxelmap = ax.voxels(result_mask, facecolors=colors, edgecolor="k",alpha=0.3, label="Groundtruth")
+        voxelmap = ax.voxels(result_mask, facecolors=colors, edgecolor=None,alpha=0.3, label="Groundtruth")
         # Setting the axes properties
 
 
@@ -192,11 +199,11 @@ class Trainer:
 if __name__=="__main__":
     trainer = Trainer()
     #unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(32))
-    unet = net.UNet(level_count=1, conv_count=2, loss=net.dice_coef_loss, residual=True)
+    unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(300), residual=True)
     unet.build()
     
-    trainer.train(epochs=50, loss=net.weighted_crossentropy(32), model = unet.model)
-    #trainer.plot_result4D(num=-3)
+    trainer.train(epochs=50, model = unet.model, batch_size=1)
+    trainer.plot_result4D(num=-3)
     #trainer.plot_result4D(num=-2)
     #trainer.plot_result4D(num=-5)
     

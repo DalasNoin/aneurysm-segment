@@ -1,12 +1,13 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import metrics
-from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, concatenate, Add
+from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, concatenate, Add, Activation
 import numpy as np
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
 import os
+from custom_layers import norm
 
 def dice_coef(y_true, y_pred):
     smooth = 1.
@@ -106,7 +107,7 @@ def weighted_mean_squared(weights):
     return loss
 
 class UNet:
-    def __init__(self, conv_count=2, filter_count=60, level_count=2, dropout=True, optimizer="adam", loss = 'mean_squared_error', output_dim=1, residual=True):
+    def __init__(self, conv_count=2, filter_count=40, level_count=2, dropout=True, optimizer="adam", loss = 'mean_squared_error', output_dim=1, residual=True):
         self.conv_count = conv_count
         self.filter_count = filter_count
         self.level_count = level_count
@@ -123,10 +124,22 @@ class UNet:
     def conv_section(self, x):
         # TODO norm
         for i in range(self.conv_count):
-            x = Conv3D(filters=self.filter_count, kernel_size=2, strides=(1,1,1),padding="same", activation="relu")(x)
+            x = norm.GroupNormalization(groups=20)(x)
+            x = Activation("relu")(x)
+            x = Conv3D(filters=self.filter_count, kernel_size=3, strides=(1,1,1),padding="same")(x)
+            
+            
         if self.dropout:
             x = Dropout(0.5)(x)
         return x
+    
+    def residual_end_section(self,x):
+        
+        y = Conv3D(filters=self.filter_count*2,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(x)
+        y = Conv3D(filters=self.filter_count*2,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
+        y = Add()([y,x])
+        Output = Conv3D(filters=self.output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
+        return Output
     
     def conv_end_section(self, y):
         y = Conv3D(filters=self.filter_count*2,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
@@ -139,6 +152,7 @@ class UNet:
         Input = tf.keras.layers.Input(shape=(None,None,None,1)) 
         levels = list()
         levels.append(Input)
+        levels[0]= Conv3D(filters=self.filter_count, kernel_size=3, strides=(1,1,1),padding="same")(levels[0])
         for i in range(self.level_count+1):
             if self.residual:
                 levels[i] = self.residual_section(levels[i])

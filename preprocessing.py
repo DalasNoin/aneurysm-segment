@@ -249,4 +249,4 @@ if __name__ == "__main__":
     # ad.save_patches_ew()
     # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
     ad = AneurysmData(config.full_data_path)
-    ad.save_patches_ew(shape=(100,100,100),threshold=0.001)
+    ad.save_patches_ew(shape=config.shape,threshold=0.001)
