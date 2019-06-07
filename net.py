@@ -1,12 +1,23 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import metrics
-from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, concatenate
+from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, concatenate, Add
 import numpy as np
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
 import os
+
+def dice_coef(y_true, y_pred):
+    smooth = 1.
+    y_true_f = tf.keras.layers.Flatten()(y_true)
+    y_pred_f = tf.keras.layers.Flatten()(y_pred)
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth)
+
+
+def dice_coef_loss(y_true, y_pred):
+    return 1.0 - dice_coef(y_true, y_pred)
 
 def weighted_crossentropy(beta):
     def convert_to_logits(y_pred):
@@ -95,7 +106,7 @@ def weighted_mean_squared(weights):
     return loss
 
 class UNet:
-    def __init__(self, conv_count=2, filter_count=30, level_count=2, dropout=True, optimizer="adam", loss = 'mean_squared_error', output_dim=1):
+    def __init__(self, conv_count=2, filter_count=60, level_count=2, dropout=True, optimizer="adam", loss = 'mean_squared_error', output_dim=1, residual=True):
         self.conv_count = conv_count
         self.filter_count = filter_count
         self.level_count = level_count
@@ -103,8 +114,14 @@ class UNet:
         self.optimizer = optimizer
         self.loss = loss
         self.output_dim = output_dim
+        self.residual = residual
+        
+    def residual_section(self, x):
+        branch = self.conv_section(x)
+        return Add()([x,branch])
         
     def conv_section(self, x):
+        # TODO norm
         for i in range(self.conv_count):
             x = Conv3D(filters=self.filter_count, kernel_size=2, strides=(1,1,1),padding="same", activation="relu")(x)
         if self.dropout:
@@ -112,18 +129,21 @@ class UNet:
         return x
     
     def conv_end_section(self, y):
-        y = Conv3D(filters=60,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
-        y = Conv3D(filters=40,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
+        y = Conv3D(filters=self.filter_count*2,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+        y = Conv3D(filters=self.filter_count*2,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
         Output = Conv3D(filters=self.output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
         return Output
             
     def build(self):
-        Input = tf.keras.layers.Input(shape=(40,40,40,1)) 
-        #Input = tf.keras.layers.Input(shape=(None,None,None,1)) 
+        #Input = tf.keras.layers.Input(shape=(40,40,40,1)) 
+        Input = tf.keras.layers.Input(shape=(None,None,None,1)) 
         levels = list()
         levels.append(Input)
         for i in range(self.level_count+1):
-            levels[i] = self.conv_section(levels[i])
+            if self.residual:
+                levels[i] = self.residual_section(levels[i])
+            else:
+                levels[i] = self.conv_section(levels[i])
             levels.append(MaxPooling3D(pool_size=(2, 2, 2), strides=None, padding='same')(levels[i]))
         x=levels[-1]
         #x = self.conv_section(x)
@@ -136,16 +156,19 @@ class UNet:
         #x = UpSampling3D((2,2,2))(x)
         #x = concatenate([x,levels[0]],axis=-1)
         for i in range(self.level_count,-1,-1):
-            x = self.conv_section(x)
+            if self.residual:
+                x = self.residual_section(x)
+            else:
+                x = self.conv_section(x)
             x = UpSampling3D((2,2,2))(x)
-            x = concatenate([x,levels[i]],axis=-1)
+            x = Add()([x,levels[i]])#concatenate([x,levels[i]],axis=-1)
         Output = self.conv_end_section(x)
         self.model = Model(inputs=(Input), outputs=(Output))
         for layer in self.model.layers:
             print(layer.output_shape, str(layer))
         self.model.compile(optimizer=self.optimizer,
                   loss=self.loss,
-                  metrics=[metrics.mae])
+                  metrics=[metrics.mae, dice_coef])
         
     def save_model(self):
         local_path = ""

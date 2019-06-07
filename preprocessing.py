@@ -95,7 +95,8 @@ class AneurysmData:
             mask = self.to_binary(mask)
             self.save_single(mask_dir, mask_name, mask)
 
-    def save_patches_ew(self, threshold = 0.02):
+    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40)):
+        safe_mkdir(config.patch_data_path)
         self.threshold = threshold
         safe_mkdir(config.full_data_path)
         mask_dir = join(config.patch_data_path, "mask")
@@ -103,7 +104,7 @@ class AneurysmData:
         safe_mkdir(mask_dir)
         safe_mkdir(image_dir)
         print("Create Patches for the images")
-        self.records = pd.DataFrame(self.run_patch_pos(config.patch_data_path),columns=["Indices", "patches", "filepath", "name", "positiv"])
+        self.records = pd.DataFrame(self.run_patch_pos(config.patch_data_path, shape=shape),columns=["Indices", "patches", "filepath", "name", "positiv"])
         #self.run_patch(self.paths_image, self.image_names, image_dir)
         print("Create patches for the masks")
         #self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
@@ -117,15 +118,15 @@ class AneurysmData:
         return filepath
     
     
-    def run_patch_pos(self, target_dir):
+    def run_patch_pos(self, target_dir, shape=(40,40,40)):
         records = []
         mask_dir = join(config.patch_data_path, "mask")
         image_dir = join(config.patch_data_path, "image")
         for image_path, image_name, mask_path, mask_name in tqdm(zip(self.paths_image, self.image_names, self.paths_mask, self.mask_names), total=len(self.paths_image)):
             image = extract_pixel_array(image_path)
             mask = extract_pixel_array(mask_path)
-            pi = patching.PatchImage(name=image_name, tensor=image,stride=(20,20,20))
-            pi_mask = patching.PatchImage(name=mask_name, tensor=mask,stride=(20,20,20))
+            pi = patching.PatchImage(name=image_name, tensor=image,stride=config.stride, shape=shape)
+            pi_mask = patching.PatchImage(name=mask_name, tensor=mask,stride=config.stride, shape=shape)
             for mask_sub_tensor, indices, patch in pi_mask.iterate():
                 image_filepath = self.generate_filepath(image_dir, image_name, indices)
                 mask_filepath = self.generate_filepath(mask_dir, image_name, indices)
@@ -221,7 +222,7 @@ class AneurysmDataGenerator:
 
     def load(self, paths):
         images = list()
-        for path in paths:
+        for path in tqdm(paths):
             image = extract_pixel_array(path)
             images.append(image)
         return images
@@ -242,11 +243,10 @@ class AneurysmDataGenerator:
 
 
 if __name__ == "__main__":
-    pass
     # ad = AneurysmData(config.PATH, size=None)
     # ad.element_wise_save()
     # ad = AneurysmData(config.full_data_path)
     # ad.save_patches_ew()
     # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
     ad = AneurysmData(config.full_data_path)
-    ad.save_patches_ew()
+    ad.save_patches_ew(shape=(100,100,100),threshold=0.001)

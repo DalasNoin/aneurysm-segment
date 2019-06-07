@@ -40,7 +40,6 @@ class Trainer:
         self.y = np.array(self.y)
         
         
-        
         #if "crossentropy" in self.loss:
             
             #self.y = keras.utils.to_categorical(self.y)
@@ -192,7 +191,8 @@ class Trainer:
         
 if __name__=="__main__":
     trainer = Trainer()
-    unet = net.UNet(level_count=1, loss=net.weighted_crossentropy(32))
+    #unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(32))
+    unet = net.UNet(level_count=1, conv_count=2, loss=net.dice_coef_loss, residual=True)
     unet.build()
     
     trainer.train(epochs=50, loss=net.weighted_crossentropy(32), model = unet.model)
