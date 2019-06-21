@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 
-def plot_overlap(target_mask, predicted_mask):
+def plot_overlap(target_mask, predicted_mask, start = 10):
     import matplotlib.pyplot as plt
     N=4
     image = target_mask
@@ -12,6 +12,6 @@ def plot_overlap(target_mask, predicted_mask):
         for j in range(N):
             im = image[i+j*N+5,:,:]
             m = mask[i+j*N+5,:,:]
-            ax[i,j].imshow(im,alpha=0.4,cmap="Greys_r",vmin=0,vmax=1)
+            ax[i,j].imshow(im,alpha=0.4,cmap="hot",vmin=0,vmax=1)
             ax[i,j].imshow(m,alpha=0.6, cmap="cividis",vmin=0,vmax=1)
     return fig

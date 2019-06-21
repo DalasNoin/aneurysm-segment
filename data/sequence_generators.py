@@ -22,7 +22,7 @@ class DataGenerator(Sequence):
         self.on_epoch_end()
         self.flip=flip
         if flip:
-            flip_choices = [(0),(1),(2),(0, 1),(0, 2),(1, 2),(0,1,2)]
+            self.flip_choices = [None,(0),(1),(2),(0, 1),(0, 2),(1, 2),(0,1,2)]
 
     def __len__(self):
         return int(np.floor(len(self.names) / self.batch_size))
@@ -59,13 +59,13 @@ class DataGenerator(Sequence):
             if self.flip:
                 flip_axis=np.random.choice(self.flip_choices)
             
-            if self.flip:
+            if self.flip and flip_axis is not None:
                 np.flip(temp,axis=flip_axis)
             X[i, :temp.shape[0], :temp.shape[1], :temp.shape[2],:] = temp.reshape(*temp.shape, 1)
 
             # Store class
             temp = np.load(config.patch_data_path+'/mask/' + ID)
-            if self.flip:
+            if self.flip and flip_axis is not None:
                 np.flip(temp,axis=flip_axis)
             y[i, :temp.shape[0], :temp.shape[1], :temp.shape[2],:] = temp.reshape(*temp.shape,1)
         

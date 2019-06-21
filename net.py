@@ -1,13 +1,14 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import metrics
-from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, concatenate, Add, Activation
+from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, concatenate, Add, Activation, SpatialDropout3D
 import numpy as np
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
 import os
 from custom_layers import norm
+import config
 
 def dice_coef(y_true, y_pred):
     smooth = 1.
@@ -112,10 +113,19 @@ class UNet:
         self.filter_count = filter_count
         self.level_count = level_count
         self.dropout = dropout
-        self.optimizer = optimizer
         self.loss = loss
         self.output_dim = output_dim
         self.residual = residual
+        self.lr=0
+        if optimizer == "adam":
+            self.lr=0.001
+            self.optimizer = keras.optimizers.Adam(lr=self.lr)
+            
+        elif optimizer == "sgd":
+            self.lr = 0.01
+            self.optimizer = keras.optimizers.SGD(lr=self.lr, decay=1e-6, momentum=0.9, nesterov=True)
+        else:
+            self.optimizer = optimizer
         
     def residual_section(self, x):
         branch = self.conv_section(x)
@@ -130,26 +140,27 @@ class UNet:
             
             
         if self.dropout:
-            x = Dropout(0.5)(x)
+            x = SpatialDropout3D(0.2)(x)
         return x
     
     def residual_end_section(self,x):
         
-        y = Conv3D(filters=self.filter_count*2,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(x)
-        y = Conv3D(filters=self.filter_count*2,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
+        y = Conv3D(filters=self.filter_count,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(x)
         y = Add()([y,x])
+        y = Conv3D(filters=self.filter_count,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
+        
         Output = Conv3D(filters=self.output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
         return Output
     
     def conv_end_section(self, y):
-        y = Conv3D(filters=self.filter_count*2,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
-        y = Conv3D(filters=self.filter_count*2,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
+        y = Conv3D(filters=self.filter_count,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
+        y = Conv3D(filters=self.filter_count,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
         Output = Conv3D(filters=self.output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
         return Output
             
     def build(self):
         #Input = tf.keras.layers.Input(shape=(40,40,40,1)) 
-        Input = tf.keras.layers.Input(shape=(None,None,None,1)) 
+        Input = tf.keras.layers.Input(shape=(*config.shape,1)) 
         levels = list()
         levels.append(Input)
         levels[0]= Conv3D(filters=self.filter_count, kernel_size=3, strides=(1,1,1),padding="same")(levels[0])
@@ -160,15 +171,6 @@ class UNet:
                 levels[i] = self.conv_section(levels[i])
             levels.append(MaxPooling3D(pool_size=(2, 2, 2), strides=None, padding='same')(levels[i]))
         x=levels[-1]
-        #x = self.conv_section(x)
-        #x = UpSampling3D((2,2,2))(x)
-        #x = concatenate([x,levels[2]],axis=-1)
-        #x = self.conv_section(x)
-        #x = UpSampling3D((2,2,2))(x)
-        #x = concatenate([x,levels[1]],axis=-1)
-        #x = self.conv_section(x)
-        #x = UpSampling3D((2,2,2))(x)
-        #x = concatenate([x,levels[0]],axis=-1)
         for i in range(self.level_count,-1,-1):
             if self.residual:
                 x = self.residual_section(x)
@@ -176,10 +178,12 @@ class UNet:
                 x = self.conv_section(x)
             x = UpSampling3D((2,2,2))(x)
             x = Add()([x,levels[i]])#concatenate([x,levels[i]],axis=-1)
-        Output = self.conv_end_section(x)
+        if self.residual:
+            Output = self.residual_end_section(x)
+        else:
+            Output = self.conv_end_section(x)
         self.model = Model(inputs=(Input), outputs=(Output))
-        for layer in self.model.layers:
-            print(layer.output_shape, str(layer))
+        print(self.model.summary())
         self.model.compile(optimizer=self.optimizer,
                   loss=self.loss,
                   metrics=[metrics.mae, dice_coef])
@@ -189,8 +193,11 @@ class UNet:
         model_json = self.model.to_json()
         with open(os.path.join(local_path,"model_unet.json"), "w") as json_file:
             json_file.write(model_json)
-        
-        
+            
+    def get_args(self):
+        description = "{},{},{},{},{},{},{},{}".format(self.conv_count, self.filter_count, self.level_count, self.dropout, self.optimizer, self.loss, self.output_dim, self.residual)
+        description += "\n lr="+str(self.lr)
+        return description
 
 
 def conv_model(loss = "mean_squared_error"):

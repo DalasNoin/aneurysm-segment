@@ -22,12 +22,13 @@ class Trainer:
         os.makedirs("plots",exist_ok=True)
         os.makedirs("logs",exist_ok=True)
     
-    def train(self, batch_size, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR", model=None):
+    def train(self, batch_size, epochs=10, optimizer="adam", loss = "mean_squared_error", name="TR", model=None, descriptive_args=""):
         self.loss=loss
         self.batch_size = batch_size
         self.epochs = epochs
         self.optimizer = optimizer
         self.name = "{}{}".format(datetime.datetime.now().strftime("%Y%m%dx%H%M%S"),name)
+        self.descriptive_args = descriptive_args
         #records = pd.read_csv(os.path.join(patch_data_path,"records.csv"))
         #names = list(records[records["positiv"]]["filepath"])
         #names = [name.split("/")[-1]+".npy" for name in names]
@@ -62,13 +63,22 @@ class Trainer:
         self.history = self.model.fit_generator(generator=self.train_gen,epochs=epochs,validation_data=self.test_gen)
         self.log()
         
+    def plot_history(self,path):
+        for col in ['dice_coef', 'val_dice_coef']:
+            plt.plot(self.history.history[col],label=col)
+        plt.legend()
+        plt.savefig(os.path.join(path,"stats.pdf"))
+        
     def log(self):
         local_path = "logs/{}".format(self.name)
         os.makedirs(local_path,exist_ok=True)
         pd.DataFrame(self.history.history).to_csv(os.path.join(local_path, "history.csv"))
         args = "{},{},{},{}".format(self.name,self.epochs, self.optimizer,self.loss)
+        args += "\nDescription: {}".format(self.descriptive_args)
         with open(os.path.join(local_path,"args.txt"),"w") as f:
             f.write(args)
+            
+        self.plot_history(local_path)
             
         model_json = self.model.to_json()
         with open(os.path.join(local_path,"model.json"), "w") as json_file:
@@ -198,12 +208,13 @@ class Trainer:
         
 if __name__=="__main__":
     trainer = Trainer()
+    
     #unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(32))
-    unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(300), residual=True)
+    unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=60,optimizer="adam")
     unet.build()
     
-    trainer.train(epochs=50, model = unet.model, batch_size=1)
-    trainer.plot_result4D(num=-3)
+    trainer.train(epochs=250, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
+    #trainer.plot_result4D(num=-3)
     #trainer.plot_result4D(num=-2)
     #trainer.plot_result4D(num=-5)
     
