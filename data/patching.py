@@ -26,8 +26,6 @@ class PatchImage:
     def cut_patch(self, patch):
         return self.tensor[patch[0]:patch[3], patch[1]:patch[4], patch[2]:patch[5]]
 
-
-
     def iterate(self):
         X, Y, Z = np.meshgrid(*[np.arange(value) for value in self.patch_indices])
         X, Y, Z = X.flatten(), Y.flatten(), Z.flatten()
