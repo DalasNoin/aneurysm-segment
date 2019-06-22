@@ -116,25 +116,26 @@ class UNet:
         self.loss = loss
         self.output_dim = output_dim
         self.residual = residual
+        self.concatenate=True
         self.lr=0
         if optimizer == "adam":
-            self.lr=0.001
+            self.lr=0.0001
             self.optimizer = keras.optimizers.Adam(lr=self.lr)
             
         elif optimizer == "sgd":
             self.lr = 0.01
-            self.optimizer = keras.optimizers.SGD(lr=self.lr, decay=1e-6, momentum=0.9, nesterov=True)
+            self.optimizer = keras.optimizers.SGD(lr=self.lr, decay=1e-3, momentum=0.9, nesterov=True)
         else:
             self.optimizer = optimizer
         
-    def residual_section(self, x):
-        branch = self.conv_section(x)
+    def residual_section(self, x, filter_count):
+        branch = self.conv_section(x, filter_count)
         return Add()([x,branch])
         
-    def conv_section(self, x):
+    def conv_section(self, x, filter_count):
         # TODO norm
         for i in range(self.conv_count):
-            x = norm.GroupNormalization(groups=20)(x)
+            x = norm.GroupNormalization(groups=filter_count//2)(x)
             x = Activation("relu")(x)
             x = Conv3D(filters=self.filter_count, kernel_size=3, strides=(1,1,1),padding="same")(x)
             
@@ -143,7 +144,7 @@ class UNet:
             x = SpatialDropout3D(0.2)(x)
         return x
     
-    def residual_end_section(self,x):
+    def residual_end_section(self,x, filter_count):
         
         y = Conv3D(filters=self.filter_count,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(x)
         y = Add()([y,x])
@@ -152,36 +153,38 @@ class UNet:
         Output = Conv3D(filters=self.output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
         return Output
     
-    def conv_end_section(self, y):
+    def conv_end_section(self, y, filter_count):
         y = Conv3D(filters=self.filter_count,kernel_size=3,strides=(1,1,1),padding="same", activation="relu")(y)
         y = Conv3D(filters=self.filter_count,kernel_size=1,strides=(1,1,1),padding="same", activation="relu")(y)
         Output = Conv3D(filters=self.output_dim,kernel_size=1,strides=(1,1,1),padding="same", activation="sigmoid")(y)
         return Output
             
     def build(self):
-        #Input = tf.keras.layers.Input(shape=(40,40,40,1)) 
-        Input = tf.keras.layers.Input(shape=(*config.shape,1)) 
+        Input = tf.keras.layers.Input(shape=(None,None,None,1)) 
+        #Input = tf.keras.layers.Input(shape=(*config.shape,1)) 
         levels = list()
         levels.append(Input)
         levels[0]= Conv3D(filters=self.filter_count, kernel_size=3, strides=(1,1,1),padding="same")(levels[0])
         for i in range(self.level_count+1):
             if self.residual:
-                levels[i] = self.residual_section(levels[i])
+                levels[i] = self.residual_section(levels[i], self.filter_count)
             else:
-                levels[i] = self.conv_section(levels[i])
+                levels[i] = self.conv_section(levels[i],self.filter_count)
             levels.append(MaxPooling3D(pool_size=(2, 2, 2), strides=None, padding='same')(levels[i]))
         x=levels[-1]
         for i in range(self.level_count,-1,-1):
+            extra_filters = (self.level_count - i)*self.filter_count
             if self.residual:
-                x = self.residual_section(x)
+                x = self.residual_section(x, self.filter_count + extra_filters)
             else:
-                x = self.conv_section(x)
+                x = self.conv_section(x, self.filter_count + extra_filters)
             x = UpSampling3D((2,2,2))(x)
-            x = Add()([x,levels[i]])#concatenate([x,levels[i]],axis=-1)
+            x = concatenate([x,levels[i]],axis=-1) # Add()([x,levels[i]])#
+        extra_filters = self.level_count*self.filter_count
         if self.residual:
-            Output = self.residual_end_section(x)
+            Output = self.residual_end_section(x,self.filter_count + extra_filters)
         else:
-            Output = self.conv_end_section(x)
+            Output = self.conv_end_section(x, self.filter_count + extra_filters)
         self.model = Model(inputs=(Input), outputs=(Output))
         print(self.model.summary())
         self.model.compile(optimizer=self.optimizer,

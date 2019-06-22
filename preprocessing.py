@@ -40,12 +40,24 @@ def safe_mkdir(path):
 
 
 class AneurysmData:
-    def __init__(self, path, size=None, mock=False):
+    def __init__(self, path, size=None, validation=False, mock=False):
         if not mock:
             path_image = os.path.join(path, "image")
             path_mask = os.path.join(path, "mask")
+
             self.paths_image, self.image_names = discover(path_image)
             self.paths_mask, self.mask_names = discover(path_mask)
+            if not validation:
+                self.paths_image = self.paths_image[config.validation_split:]
+                self.paths_mask = self.paths_mask[config.validation_split:]
+                self.image_names = self.image_names[config.validation_split:]
+                self.mask_names = self.mask_names[config.validation_split:]
+            else:
+                self.paths_image = self.paths_image[:config.validation_split]
+                self.paths_mask = self.paths_mask[:config.validation_split]
+                self.image_names = self.image_names[:config.validation_split]
+                self.mask_names = self.mask_names[:config.validation_split]
+                
             if size is not None:
                 self.images = self.downsampling(self.paths_image, size=size)
                 self.masks = self.downsampling(self.paths_mask, size=size)
@@ -95,21 +107,21 @@ class AneurysmData:
             mask = self.to_binary(mask)
             self.save_single(mask_dir, mask_name, mask)
 
-    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40)):
-        safe_mkdir(config.patch_data_path)
+    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40), stride=(40,40,40), target_path=config.patch_data_path):
+        safe_mkdir(target_path)
         self.threshold = threshold
         safe_mkdir(config.full_data_path)
-        mask_dir = join(config.patch_data_path, "mask")
-        image_dir = join(config.patch_data_path, "image")
+        mask_dir = join(target_path, "mask")
+        image_dir = join(target_path, "image")
         safe_mkdir(mask_dir)
         safe_mkdir(image_dir)
         print("Create Patches for the images")
-        self.records = pd.DataFrame(self.run_patch_pos(config.patch_data_path, shape=shape),columns=["Indices", "patches", "filepath", "name", "positiv"])
+        self.records = pd.DataFrame(self.run_patch_pos(target_path, shape=shape, stride=stride),columns=["Indices", "patches", "filepath", "name", "positiv"])
         #self.run_patch(self.paths_image, self.image_names, image_dir)
         print("Create patches for the masks")
         #self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
                                     #columns=["Indices", "patches", "filepath", "name", "positiv"])
-        self.records.to_csv(join(config.patch_data_path, "records.csv"))
+        self.records.to_csv(join(target_path, "records.csv"))
 
     def generate_filepath(self, target_dir, name, indices):
         if "." in name:
@@ -118,15 +130,15 @@ class AneurysmData:
         return filepath
     
     
-    def run_patch_pos(self, target_dir, shape=(40,40,40)):
+    def run_patch_pos(self, target_dir, shape=(40,40,40),stride=(40,40,40)):
         records = []
-        mask_dir = join(config.patch_data_path, "mask")
-        image_dir = join(config.patch_data_path, "image")
+        mask_dir = join(target_dir, "mask")
+        image_dir = join(target_dir, "image")
         for image_path, image_name, mask_path, mask_name in tqdm(zip(self.paths_image, self.image_names, self.paths_mask, self.mask_names), total=len(self.paths_image)):
             image = extract_pixel_array(image_path)
             mask = extract_pixel_array(mask_path)
-            pi = patching.PatchImage(name=image_name, tensor=image,stride=config.stride, shape=shape)
-            pi_mask = patching.PatchImage(name=mask_name, tensor=mask,stride=config.stride, shape=shape)
+            pi = patching.PatchImage(name=image_name, tensor=image,stride=stride, shape=shape)
+            pi_mask = patching.PatchImage(name=mask_name, tensor=mask,stride=stride, shape=shape)
             for mask_sub_tensor, indices, patch in pi_mask.iterate():
                 image_filepath = self.generate_filepath(image_dir, image_name, indices)
                 mask_filepath = self.generate_filepath(mask_dir, image_name, indices)
@@ -135,7 +147,7 @@ class AneurysmData:
                 if not positive_eg: continue
                 sub_tensor = pi.cut_patch(patch)
                 records.append([indices, patch, mask_filepath, image_name, positive_eg])
-                np.save(image_filepath, sub_tensor)
+                np.save(image_filepath, self.normalize(sub_tensor))
                 np.save(mask_filepath, mask_sub_tensor)
         return records
 
@@ -241,6 +253,20 @@ class AneurysmDataGenerator:
                 ax[i, j].imshow(m == 0, alpha=alpha_mask, cmap="cividis", vmin=0, vmax=1)
         return fig
 
+def get_aneurysm_generator():
+    records = pd.read_csv(os.path.join(config.patch_data_path,"records.csv"))
+    names = list(records[records["positiv"]]["filepath"])
+    names = [name.split("/")[-1]+".npy" for name in names]
+    adg = AneurysmDataGenerator(config.patch_data_path,names)
+    return adg
+
+def make_validation_data():
+    ad = AneurysmData(config.full_data_path,validation=True)
+    ad.save_patches_ew(shape=config.shape,threshold=-0.0001, stride=config.stride, target_path=config.patch_validation_data_path)
+    
+def make_train_data():
+    ad = AneurysmData(config.full_data_path,validation=False)
+    ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride, target_path=config.patch_data_path)
 
 if __name__ == "__main__":
     # ad = AneurysmData(config.PATH, size=None)
@@ -248,5 +274,7 @@ if __name__ == "__main__":
     # ad = AneurysmData(config.full_data_path)
     # ad.save_patches_ew()
     # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
-    ad = AneurysmData(config.full_data_path)
-    ad.save_patches_ew(shape=config.shape,threshold=0.001)
+    make_validation_data()
+    make_train_data()
+    #ad = AneurysmData(config.full_data_path)
+    #ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride)

@@ -16,6 +16,7 @@ import matplotlib.animation as animation
 import datetime
 from tensorflow.keras.utils import plot_model
 from data import sequence_generators
+import argparse
 
 class Trainer:
     def __init__(self):
@@ -58,8 +59,8 @@ class Trainer:
         else:
             self.model=model
         partition = sequence_generators.get_train_val_sequence()
-        self.train_gen = sequence_generators.DataGenerator(partition["train"], batch_size=self.batch_size)
-        self.test_gen = sequence_generators.DataGenerator(partition["test"], batch_size=self.batch_size)
+        self.train_gen = sequence_generators.DataGenerator(partition["train"],config.patch_data_path, batch_size=self.batch_size)
+        self.test_gen = sequence_generators.DataGenerator(partition["test"],config.patch_validation_data_path, batch_size=self.batch_size)
         self.history = self.model.fit_generator(generator=self.train_gen,epochs=epochs,validation_data=self.test_gen)
         self.log()
         
@@ -213,7 +214,7 @@ if __name__=="__main__":
     unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=60,optimizer="adam")
     unet.build()
     
-    trainer.train(epochs=250, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
+    trainer.train(epochs=100, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
     #trainer.plot_result4D(num=-3)
     #trainer.plot_result4D(num=-2)
     #trainer.plot_result4D(num=-5)
