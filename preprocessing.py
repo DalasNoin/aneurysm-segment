@@ -101,13 +101,14 @@ class AneurysmData:
         for image_path, image_name, mask_path, mask_name in zip(self.paths_image, self.image_names, self.paths_mask,
                                                                 self.mask_names):
             image = extract_pixel_array(image_path)
-            image = self.normalize(image).astype("float32")
+            #image = self.normalize(image).astype("float32")
+            image = image.astype("float32")
             self.save_single(image_dir, image_name, image)
             mask = extract_pixel_array(mask_path)
             mask = self.to_binary(mask)
             self.save_single(mask_dir, mask_name, mask)
 
-    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40), stride=(40,40,40), target_path=config.patch_data_path):
+    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40), stride=(40,40,40), target_path=config.patch_data_path, mean=0, std=1):
         safe_mkdir(target_path)
         self.threshold = threshold
         safe_mkdir(config.full_data_path)
@@ -115,10 +116,9 @@ class AneurysmData:
         image_dir = join(target_path, "image")
         safe_mkdir(mask_dir)
         safe_mkdir(image_dir)
-        print("Create Patches for the images")
-        self.records = pd.DataFrame(self.run_patch_pos(target_path, shape=shape, stride=stride),columns=["Indices", "patches", "filepath", "name", "positiv"])
+        ret = self.run_patch_pos(target_path, shape=shape, stride=stride, mean=mean, std=std)
+        self.records = pd.DataFrame(ret ,columns=["Indices", "patches", "filepath", "name", "positiv"])
         #self.run_patch(self.paths_image, self.image_names, image_dir)
-        print("Create patches for the masks")
         #self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
                                     #columns=["Indices", "patches", "filepath", "name", "positiv"])
         self.records.to_csv(join(target_path, "records.csv"))
@@ -129,8 +129,14 @@ class AneurysmData:
         filepath = join(target_dir, "{}-{}x{}x{}".format(name, *indices))
         return filepath
     
+    def get_mean_std(self):
+        image_list = list()
+        for image_path in self.paths_image:
+            image_list.append(extract_pixel_array(image_path))
+        vector = np.concatenate(image_list).flatten()
+        return np.mean(vector), np.std(vector)
     
-    def run_patch_pos(self, target_dir, shape=(40,40,40),stride=(40,40,40)):
+    def run_patch_pos(self, target_dir, shape=(40,40,40),stride=(40,40,40), mean=0,std=1):
         records = []
         mask_dir = join(target_dir, "mask")
         image_dir = join(target_dir, "image")
@@ -146,8 +152,9 @@ class AneurysmData:
                 positive_eg = np.mean(mask_sub_tensor) > self.threshold
                 if not positive_eg: continue
                 sub_tensor = pi.cut_patch(patch)
+                sub_tensor = (sub_tensor - mean) / std
                 records.append([indices, patch, mask_filepath, image_name, positive_eg])
-                np.save(image_filepath, self.normalize(sub_tensor))
+                np.save(image_filepath, sub_tensor)
                 np.save(mask_filepath, mask_sub_tensor)
         return records
 
@@ -260,21 +267,26 @@ def get_aneurysm_generator():
     adg = AneurysmDataGenerator(config.patch_data_path,names)
     return adg
 
-def make_validation_data():
+def make_validation_data(mean, std):
+    print("Create Validation Patches")
     ad = AneurysmData(config.full_data_path,validation=True)
-    ad.save_patches_ew(shape=config.shape,threshold=-0.0001, stride=config.stride, target_path=config.patch_validation_data_path)
+    ad.save_patches_ew(shape=config.shape,threshold=-0.0001, stride=config.shape, target_path=config.patch_validation_data_path, mean=mean, std=std)
     
 def make_train_data():
+    print("Create Train Patches")
     ad = AneurysmData(config.full_data_path,validation=False)
-    ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride, target_path=config.patch_data_path)
+    mean, std = ad.get_mean_std()
+    ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride, target_path=config.patch_data_path, mean=mean, std=std)
+    return mean, std
 
 if __name__ == "__main__":
-    # ad = AneurysmData(config.PATH, size=None)
-    # ad.element_wise_save()
+    #ad = AneurysmData(config.PATH, size=None)
+    #ad.element_wise_save()
     # ad = AneurysmData(config.full_data_path)
     # ad.save_patches_ew()
     # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
-    make_validation_data()
-    make_train_data()
+    
+    mean, std = make_train_data()
+    make_validation_data(mean, std)
     #ad = AneurysmData(config.full_data_path)
     #ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride)

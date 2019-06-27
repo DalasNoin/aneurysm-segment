@@ -17,6 +17,11 @@ import datetime
 from tensorflow.keras.utils import plot_model
 from data import sequence_generators
 import argparse
+from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+from time import time
+from custom_layers import norm
+
+from tensorflow.keras.models import load_model
 
 class Trainer:
     def __init__(self):
@@ -30,6 +35,8 @@ class Trainer:
         self.optimizer = optimizer
         self.name = "{}{}".format(datetime.datetime.now().strftime("%Y%m%dx%H%M%S"),name)
         self.descriptive_args = descriptive_args
+        self.log_path = "logs/{}/".format(self.name)
+        os.makedirs(self.log_path,exist_ok=True)
         #records = pd.read_csv(os.path.join(patch_data_path,"records.csv"))
         #names = list(records[records["positiv"]]["filepath"])
         #names = [name.split("/")[-1]+".npy" for name in names]
@@ -59,20 +66,24 @@ class Trainer:
         else:
             self.model=model
         partition = sequence_generators.get_train_val_sequence()
-        self.train_gen = sequence_generators.DataGenerator(partition["train"],config.patch_data_path, batch_size=self.batch_size)
-        self.test_gen = sequence_generators.DataGenerator(partition["test"],config.patch_validation_data_path, batch_size=self.batch_size)
-        self.history = self.model.fit_generator(generator=self.train_gen,epochs=epochs,validation_data=self.test_gen)
+        self.train_gen = sequence_generators.DataGenerator(partition["train"],config.patch_data_path, batch_size=self.batch_size, flip=True)
+        self.test_gen = sequence_generators.DataGenerator(partition["test"],config.patch_validation_data_path, batch_size=self.batch_size, flip=False)
+        os.makedirs(self.log_path+"tensorboard_logs/",exist_ok=True)
+        tensorboard = TensorBoard(log_dir=self.log_path+"tensorboard_logs/{}".format(time()))
+        os.makedirs(self.log_path+"chkpnts/",exist_ok=True)
+        modelcheckpoint = ModelCheckpoint(self.log_path+"chkpnts/{epoch:03d}-vd{val_dice_coef:.5f}.hdf5", monitor='val_dice_coef', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)
+        self.history = self.model.fit_generator(generator=self.train_gen,epochs=epochs,validation_data=self.test_gen,callbacks=[modelcheckpoint, tensorboard])
         self.log()
         
     def plot_history(self,path):
         for col in ['dice_coef', 'val_dice_coef']:
             plt.plot(self.history.history[col],label=col)
         plt.legend()
+        plt.ylim((-0.05,1.05))
         plt.savefig(os.path.join(path,"stats.pdf"))
         
     def log(self):
         local_path = "logs/{}".format(self.name)
-        os.makedirs(local_path,exist_ok=True)
         pd.DataFrame(self.history.history).to_csv(os.path.join(local_path, "history.csv"))
         args = "{},{},{},{}".format(self.name,self.epochs, self.optimizer,self.loss)
         args += "\nDescription: {}".format(self.descriptive_args)
@@ -206,15 +217,21 @@ class Trainer:
         writer = Writer(fps=15)#, metadata=dict(artist='Me'), bitrate=5500)
         
         line_ani.save("plots/plot{}.mp4".format(num), writer=writer, dpi=200)
+
+def load_custom_model(model_path):
+    return load_model(model_path,custom_objects = {"GroupNormalization":norm.GroupNormalization, "loss":net.weighted_crossentropy(500), "dice_coef":net.dice_coef})
         
 if __name__=="__main__":
     trainer = Trainer()
     
-    #unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(32))
-    unet = net.UNet(level_count=1, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=60,optimizer="adam")
+    unet = net.UNet(level_count=2, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=30,optimizer="adam")
     unet.build()
     
-    trainer.train(epochs=100, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
+    trainer.train(epochs=30, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
+    #model_path = "~/Simon/src/aneurysm-segment/logs/20190623x064228TR/model.h5"
+    #model = load_custom_model(config.model_path)
+    
+    #trainer.train(epochs=100, model = model, batch_size=2, descriptive_args="continuation of 20190623x064228TR")
     #trainer.plot_result4D(num=-3)
     #trainer.plot_result4D(num=-2)
     #trainer.plot_result4D(num=-5)

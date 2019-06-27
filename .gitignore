@@ -12,3 +12,5 @@ logs
 config.txt
 patches100
 patches*
+tensorboard_logs
+fullimages_un

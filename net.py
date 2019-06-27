@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import metrics
 from tensorflow.keras.layers import Conv3D, Conv3DTranspose, Flatten, Dense, Dropout, MaxPooling3D, UpSampling3D, \
-    concatenate, Add, Activation, SpatialDropout3D
+    concatenate, Add, Activation, SpatialDropout3D, BatchNormalization
 import numpy as np
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
@@ -10,6 +10,17 @@ from tensorflow.keras.models import Model
 import os
 from custom_layers import norm
 import config
+
+def dsc(p_y_given_x_train, y_gt, eps=1e-5):
+    # Similar to Intersection-Over-Union / Jaccard above.
+    # Dice coefficient: https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient
+    y_one_hot = tf.one_hot( indices=y_gt, depth=tf.shape(p_y_given_x_train)[1], axis=1, dtype="float32" )
+    numer = 2. * tf.reduce_sum(p_y_given_x_train * y_one_hot, axis=(0,2,3,4)) # 2 * TP
+    denom = tf.reduce_sum(p_y_given_x_train, axis=(0,2,3,4)) + tf.reduce_sum(y_one_hot, axis=(0,2,3,4)) # Pred + RP
+    dsc = (numer + eps) / (denom + eps) # eps in both num/den => dsc=1 when class missing.
+    av_class_dsc = tf.reduce_mean(dsc) # Along the class-axis. Mean DSC of classes. 
+    cost = 1. - av_class_dsc
+    return cost
 
 
 def dice_coef(y_true, y_pred):
@@ -143,7 +154,8 @@ class UNet:
     def conv_section(self, x, filter_count):
         # TODO norm
         for i in range(self.conv_count):
-            x = norm.GroupNormalization(groups=filter_count // 2)(x)
+            #x = norm.GroupNormalization(groups=filter_count // 2)(x)
+            x = BatchNormalization()(x)
             x = Activation("relu")(x)
             x = Conv3D(filters=filter_count, kernel_size=3, strides=(1, 1, 1), padding="same")(x)
 
@@ -155,7 +167,7 @@ class UNet:
 
         y = Conv3D(filters=filter_count, kernel_size=3, strides=(1, 1, 1), padding="same", activation="relu")(x)
         y = Add()([y, x])
-        y = Conv3D(filters=filter_count, kernel_size=1, strides=(1, 1, 1), padding="same", activation="relu")(y)
+        #y = Conv3D(filters=filter_count, kernel_size=1, strides=(1, 1, 1), padding="same", activation="relu")(y)
 
         Output = Conv3D(filters=self.output_dim, kernel_size=1, strides=(1, 1, 1), padding="same",
                         activation="sigmoid")(y)
@@ -163,7 +175,7 @@ class UNet:
 
     def conv_end_section(self, y, filter_count):
         y = Conv3D(filters=filter_count, kernel_size=3, strides=(1, 1, 1), padding="same", activation="relu")(y)
-        y = Conv3D(filters=filter_count, kernel_size=1, strides=(1, 1, 1), padding="same", activation="relu")(y)
+        #y = Conv3D(filters=filter_count, kernel_size=1, strides=(1, 1, 1), padding="same", activation="relu")(y)
         Output = Conv3D(filters=self.output_dim, kernel_size=1, strides=(1, 1, 1), padding="same",
                         activation="sigmoid")(y)
         return Output
