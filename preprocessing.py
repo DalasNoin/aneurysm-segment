@@ -130,10 +130,10 @@ class AneurysmData:
         return filepath
     
     def get_mean_std(self):
-        image_list = list()
-        for image_path in self.paths_image:
-            image_list.append(extract_pixel_array(image_path))
-        vector = np.concatenate(image_list).flatten()
+        vector = extract_pixel_array(self.paths_image[0])
+        for image_path in tqdm(self.paths_image[1:], total=len(self.paths_image)-1):
+            vector = np.concatenate((vector,extract_pixel_array(image_path)))
+        
         return np.mean(vector), np.std(vector)
     
     def run_patch_pos(self, target_dir, shape=(40,40,40),stride=(40,40,40), mean=0,std=1):
@@ -285,8 +285,11 @@ if __name__ == "__main__":
     # ad = AneurysmData(config.full_data_path)
     # ad.save_patches_ew()
     # ad.records.to_csv(join(config.patch_data_path, "records.csv"))
-    
+    #ad = AneurysmData(config.full_data_path,validation=False)
+    #mean, std = ad.get_mean_std()
+    #print(f"mean={mean}, std={std}")
     mean, std = make_train_data()
+    print(f"mean={mean}, std={std}")
     make_validation_data(mean, std)
     #ad = AneurysmData(config.full_data_path)
     #ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride)

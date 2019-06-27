@@ -186,7 +186,7 @@ class UNet:
         extra_filters = 0
         levels = list()
         levels.append(Input)
-        levels[0] = Conv3D(filters=self.filter_count, kernel_size=3, strides=(1, 1, 1), padding="same")(levels[0])
+        #levels[0] = Conv3D(filters=self.filter_count, kernel_size=3, strides=(1, 1, 1), padding="same")(levels[0])
         for i in range(self.level_count + 1):
             if self.residual:
                 levels[i] = self.residual_section(levels[i], self.filter_count)
