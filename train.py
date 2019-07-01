@@ -224,10 +224,11 @@ def load_custom_model(model_path):
 if __name__=="__main__":
     trainer = Trainer()
     
-    unet = net.UNet(level_count=2, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=30,optimizer="adam")
+    #unet = net.UNet(level_count=2, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=30,optimizer="adam")
+    unet = net.UNet(level_count=2, conv_count=2, loss=net.dice_coef_loss, residual=True, filter_count=30,optimizer="adam")
     unet.build()
     
-    trainer.train(epochs=30, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
+    trainer.train(epochs=80, model = unet.model, batch_size=2, descriptive_args=unet.get_args())
     #model_path = "~/Simon/src/aneurysm-segment/logs/20190623x064228TR/model.h5"
     #model = load_custom_model(config.model_path)
     
