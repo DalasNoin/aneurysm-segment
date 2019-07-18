@@ -9,7 +9,7 @@ from tensorflow import keras
 def get_train_val_sequence():
     records_train = pd.read_csv(os.path.join(config.patch_data_path, "records.csv"))
     records_validation = pd.read_csv(os.path.join(config.patch_validation_data_path, "records.csv"))
-    names = list(records_train[records_train["positiv"]]["filepath"])
+    names = list(records_train["filepath"])
     names_train = [name.split("/")[-1] + ".npy" for name in names]
     names_validation = [name.split("/")[-1] + ".npy" for name in records_validation["filepath"]]
     return {"test":names_validation, "train":names_train}

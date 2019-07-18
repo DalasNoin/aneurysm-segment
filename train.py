@@ -20,6 +20,7 @@ import argparse
 from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 from time import time
 from custom_layers import norm
+import loss_functions
 
 from tensorflow.keras.models import load_model
 
@@ -191,6 +192,7 @@ class Trainer:
                 ax.view_init(10,num*angle)
             else:
                 ax.view_init(min(10+(num-first_stage)*angle,90),angle*first_stage)
+            print(f"Rendered {num} frame of {frame_count} total")
 
         # Attaching 3D axis to the figure
         fig = plt.figure()
@@ -225,7 +227,7 @@ if __name__=="__main__":
     trainer = Trainer()
     
     #unet = net.UNet(level_count=2, conv_count=2, loss=net.weighted_crossentropy(500), residual=True, filter_count=30,optimizer="adam")
-    unet = net.UNet(level_count=2, conv_count=2, loss=net.dice_coef_loss, residual=True, filter_count=30,optimizer="adam")
+    unet = net.UNet(level_count=3, conv_count=2, loss=loss_functions.dice_coef_loss, residual=True, filter_count=25,optimizer="adam", concatenate=True)
     unet.build()
     
     trainer.train(epochs=80, model = unet.model, batch_size=2, descriptive_args=unet.get_args())

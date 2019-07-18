@@ -108,7 +108,7 @@ class AneurysmData:
             mask = self.to_binary(mask)
             self.save_single(mask_dir, mask_name, mask)
 
-    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40), stride=(40,40,40), target_path=config.patch_data_path, mean=0, std=1):
+    def save_patches_ew(self, threshold = 0.02, shape=(40,40,40), stride=(40,40,40), target_path=config.patch_data_path, mean=0, std=1, randomize=False):
         safe_mkdir(target_path)
         self.threshold = threshold
         safe_mkdir(config.full_data_path)
@@ -116,7 +116,7 @@ class AneurysmData:
         image_dir = join(target_path, "image")
         safe_mkdir(mask_dir)
         safe_mkdir(image_dir)
-        ret = self.run_patch_pos(target_path, shape=shape, stride=stride, mean=mean, std=std)
+        ret = self.run_patch_pos(target_path, shape=shape, stride=stride, mean=mean, std=std, randomize=randomize)
         self.records = pd.DataFrame(ret ,columns=["Indices", "patches", "filepath", "name", "positiv"])
         #self.run_patch(self.paths_image, self.image_names, image_dir)
         #self.records = pd.DataFrame(self.run_patch(self.paths_mask, self.mask_names, mask_dir, mask=True),
@@ -136,7 +136,7 @@ class AneurysmData:
         
         return np.mean(vector), np.std(vector)
     
-    def run_patch_pos(self, target_dir, shape=(40,40,40),stride=(40,40,40), mean=0,std=1):
+    def run_patch_pos(self, target_dir, shape=(40,40,40),stride=(40,40,40), mean=0, std=1, randomize=False):
         records = []
         mask_dir = join(target_dir, "mask")
         image_dir = join(target_dir, "image")
@@ -150,7 +150,10 @@ class AneurysmData:
                 mask_filepath = self.generate_filepath(mask_dir, image_name, indices)
                 
                 positive_eg = np.mean(mask_sub_tensor) > self.threshold
-                if not positive_eg: continue
+                if not randomize:
+                    if not positive_eg: continue
+                else:
+                    if not positive_eg and np.random.uniform()>0.005: continue
                 sub_tensor = pi.cut_patch(patch)
                 sub_tensor = (sub_tensor - mean) / std
                 records.append([indices, patch, mask_filepath, image_name, positive_eg])
@@ -272,11 +275,13 @@ def make_validation_data(mean, std):
     ad = AneurysmData(config.full_data_path,validation=True)
     ad.save_patches_ew(shape=config.shape,threshold=-0.0001, stride=config.shape, target_path=config.patch_validation_data_path, mean=mean, std=std)
     
-def make_train_data():
-    print("Create Train Patches")
+def make_train_data(mean = None, std = None):
+    print("Make Train Data")
     ad = AneurysmData(config.full_data_path,validation=False)
-    mean, std = ad.get_mean_std()
-    ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride, target_path=config.patch_data_path, mean=mean, std=std)
+    if mean is None and std is None:
+        print("Calculate STD and MEAN")
+        mean, std = ad.get_mean_std()
+    ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride, target_path=config.patch_data_path, mean=mean, std=std, randomize=True)
     return mean, std
 
 if __name__ == "__main__":
@@ -288,8 +293,8 @@ if __name__ == "__main__":
     #ad = AneurysmData(config.full_data_path,validation=False)
     #mean, std = ad.get_mean_std()
     #print(f"mean={mean}, std={std}")
-    mean, std = make_train_data()
+    mean, std = make_train_data(mean=-164.08331298828125,std=532.2534790039062)
     print(f"mean={mean}, std={std}")
-    make_validation_data(mean, std)
+    #make_validation_data(mean, std)
     #ad = AneurysmData(config.full_data_path)
     #ad.save_patches_ew(shape=config.shape,threshold=0.0001, stride=config.stride)
